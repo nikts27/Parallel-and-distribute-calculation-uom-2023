@@ -1,0 +1,50 @@
+# use Python remote object library
+import Pyro5.api as pyro
+import multiprocessing
+from Pi import PiCalc
+
+@pyro.expose
+class RemoteObject:
+    
+    def calc_Pi(self, steps):
+        #check for correct data
+        try:
+           numberOfSteps = int(steps)
+        except ValueError as e:
+           print('Integer convertion error: {}' .format(e))
+           exit(1)
+           
+        #Get the number of CPU cores
+        num_processes = multiprocessing.cpu_count()
+        processes = []
+        
+        #create a shared multiprocessing value representing pi
+        pi_ref = multiprocessing.Value('d', 0.0)
+        
+        #create processes
+        for i in range(num_processes):
+            processes.append(PiCalc(i, numberOfSteps, pi_ref))
+        
+        #start processes
+        for p in processes:
+            p.start()
+        
+        #wait for processes to finish
+        for p in processes:
+            p.join()
+        
+        return pi_ref.value * (1.0/numberOfSteps)
+
+if __name__ == '__main__':
+    # Create a Pyro daemon
+    daemon = pyro.Daemon()
+
+    # Register the remote object with a name
+    uri = daemon.register(RemoteObject)
+    
+    # Register the object with the name server
+    ns = pyro.locate_ns()  # locate the name server
+    ns.register("example.remoteobject", uri)  # register the object with a name
+    
+    # Start the event loop of the server to wait for calls
+    daemon.requestLoop()
